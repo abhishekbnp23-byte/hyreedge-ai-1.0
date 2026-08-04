@@ -65,7 +65,7 @@ def user_chat(message, history):
 
 # कस्टम UI डिजाइन
 with gr.Blocks(theme=gr.themes.Soft()) as demo:
-    gr.Markdown("# 🚀 My Custom AI Platform")
+    gr.Markdown("# HYREEDGE AI ENGINE 1.0")
     gr.Markdown("An enterprise-grade multi-modal AI for text, code reasoning, and image generation.")
     
     chatbot = gr.Chatbot(height=550)

@@ -6,15 +6,21 @@ import requests
 import urllib.parse
 import os
 
-# Render Environment Variable से API Key प्राप्त करना
-GOOGLE_API_KEY = os.environ.get("GEMINI_API_KEY")
+# ==========================================
+# 1. API KEY CONFIGURATION
+# ==========================================
+# अपनी असली Google AI Studio API Key को नीचे उद्धरण चिन्हों ("") के बीच लिखें
+GOOGLE_API_KEY = os.environ.get("GEMINI_API_KEY") or "YOUR_GEMINI_API_KEY_HERE"
 
-if GOOGLE_API_KEY:
+if GOOGLE_API_KEY and GOOGLE_API_KEY != "YOUR_GEMINI_API_KEY_HERE":
     genai.configure(api_key=GOOGLE_API_KEY)
     model = genai.GenerativeModel('gemini-1.5-flash')
 else:
-    print("WARNING: GEMINI_API_KEY is missing!")
+    print("WARNING: GEMINI_API_KEY is missing or invalid!")
 
+# ==========================================
+# 2. CORE LOGIC FUNCTIONS
+# ==========================================
 def generate_image_internal(prompt):
     encoded_prompt = urllib.parse.quote(prompt)
     image_url = f"https://pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed=42&model=flux"
@@ -55,7 +61,9 @@ def user_chat(message, history):
         
     return "", history
 
-# ChatGPT / Gemini स्टाइल का मॉडर्न CSS
+# ==========================================
+# 3. MODERN UI & CSS SETUP
+# ==========================================
 custom_css = """
 #main-container {
     max-width: 900px;
@@ -64,46 +72,30 @@ custom_css = """
 }
 .header-box {
     text-align: center;
-    padding: 20px 0 10px 0;
-}
-.header-box h1 {
-    font-size: 2.2rem;
-    font-weight: 700;
-    margin-bottom: 6px;
-    background: linear-gradient(90deg, #3b82f6, #8b5cf6);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-}
-.header-box p {
-    color: #6b7280;
-    font-size: 0.95rem;
+    padding: 15px 0;
+    margin-bottom: 10px;
 }
 #chatbot-box {
     border-radius: 16px !important;
     border: 1px solid #e5e7eb;
     box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
-    overflow: hidden;
-}
-.input-row {
-    margin-top: 10px;
 }
 """
 
-# Theme और UI लेआउट
 with gr.Blocks(theme=gr.themes.Soft(primary_hue="indigo", neutral_hue="slate"), css=custom_css) as demo:
     with gr.Column(elem_id="main-container"):
-        with gr.Div(elem_classes="header-box"):
+        with gr.Column(elem_classes="header-box"):
             gr.Markdown("# ✦ HyreEdge AI Engine")
             gr.Markdown("Next-Generation Multi-Modal Intelligence • Code • Reasoning • Vision")
         
         chatbot = gr.Chatbot(
             elem_id="chatbot-box",
-            height=580,
+            height=550,
             show_label=False,
             avatar_images=(None, "https://api.dicebear.com/7.x/bottts/svg?seed=HyreEdge")
         )
         
-        with gr.Row(elem_classes="input-row"):
+        with gr.Row():
             msg = gr.Textbox(
                 placeholder="Ask anything or request an image generation...",
                 show_label=False,
@@ -117,7 +109,9 @@ with gr.Blocks(theme=gr.themes.Soft(primary_hue="indigo", neutral_hue="slate"), 
         msg.submit(user_chat, [msg, chatbot], [msg, chatbot])
         submit_btn.click(user_chat, [msg, chatbot], [msg, chatbot])
 
+# ==========================================
+# 4. RENDER SERVER BINDING
+# ==========================================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 7860))
     demo.launch(server_name="0.0.0.0", server_port=port)
-

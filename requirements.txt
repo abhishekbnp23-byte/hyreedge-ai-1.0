@@ -1,4 +1,4 @@
 google-generativeai>=0.8.0
-gradio>=4.40.0
+gradio>=5.0.0
 pillow>=10.0.0
 requests>=2.31.0

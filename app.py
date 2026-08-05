@@ -13,104 +13,108 @@ GOOGLE_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
-    # gemini-1.5-pro या flash का उपयोग (Pro लीगल और कोडिंग रीज़निंग के लिए सबसे बेहतरीन है)
-    model = genai.GenerativeModel('gemini-1.5-pro')
+    model = genai.GenerativeModel('gemini-1.5-flash')
 else:
     print("CRITICAL WARNING: GEMINI_API_KEY is missing from environment variables!")
 
-# सिस्टम पर्सनालिटी (Dual Expert: Tech + Legal Core)
-SYSTEM_PERSONA = """
-You are 'HyreEdge Enterprise AI', a world-class elite Senior Technology Architect and Senior Legal Consultant/Advocate. 
-Your responses must be structured, highly professional, accurate, and deeply analytical.
-
-DOMAIN 1 - ADVANCED TECH EXPERT:
-- Provide production-ready, clean, secure code (Python, JavaScript, Cloud, System Architecture).
-- Explain complex architectural trade-offs, debugging, and scaling strategies.
-
-DOMAIN 2 - LEGAL EXPERT:
-- Analyze scenarios through legal frameworks, contractual obligations, compliance, and procedural logic.
-- Structure arguments or draft clauses with precision (Note: Add a standard disclaimer that this is AI-assisted legal structuring, not formal court representation).
-
-If an image generation or visual asset is requested, process it seamlessly. Always maintain an authoritative, helpful, and ultra-professional tone.
-"""
+# स्पेशलाइज्ड डुअल-सिस्टम पर्सनालिटी (Tech + Legal Expert)
+SYSTEM_PERSONA = (
+    "You are 'HyreEdge Enterprise AI', an elite Senior Technology Architect and Senior Legal Consultant/Advocate.\n"
+    "Provide authoritative, accurate, structured, and deeply analytical responses.\n\n"
+    "1. TECH EXPERT ROLE: Offer clean, robust code, cloud architectures, debugging, and system engineering guidance.\n"
+    "2. LEGAL EXPERT ROLE: Offer clear legal analysis, contractual drafting structures, compliance insights, and procedural frameworks.\n\n"
+    "Maintain a professional, clear, and highly competent tone at all times."
+)
 
 # ==========================================
-# 2. CORE ENGINES (IMAGE + TEXT)
+# 2. CORE ENGINES (IMAGE & CHAT)
 # ==========================================
 def generate_image_internal(prompt):
     encoded_prompt = urllib.parse.quote(prompt)
     image_url = f"https://pollinations.ai/p/{encoded_prompt}?width=1024&height=1024&seed=42&model=flux"
     try:
         response = requests.get(image_url, timeout=30)
-        img = PIL.Image.open(io.BytesIO(response.content))
-        return img
-    except Exception as e:
-        return None
+        if response.status_code == 200:
+            img = PIL.Image.open(io.BytesIO(response.content))
+            return img
+    except Exception:
+        pass
+    return None
 
 def process_ai_request(user_input, history, uploaded_file):
     if not user_input and not uploaded_file:
         return "", history
 
-    input_lower = user_input.lower()
-    
-    # इमेज जनरेशन ट्रिगर चेक
-    image_triggers = ["generate image", "create image", "draw", "तस्वीर बनाओ", "फोटो बनाओ", "image of", "photo of", "flux"]
+    input_text = user_input.strip() if user_input else ""
+    input_lower = input_text.lower()
+
+    # 1. यूजर मैसेज को हिस्ट्री में डिक्शनरी फॉर्मेट में जोड़ें
+    history.append({"role": "user", "content": input_text if input_text else "[File Uploaded]"})
+
+    # 2. इमेज जनरेशन चेक
+    image_triggers = ["generate image", "create image", "draw", "तस्वीर बनाओ", "फोटो बनाओ", "चित्र बनाओ", "image of", "photo of", "flux"]
     is_image_request = any(trigger in input_lower for trigger in image_triggers)
-    
+
     if is_image_request and not uploaded_file:
         try:
-            prompt_refinement = f"Convert into a detailed graphic prompt: {user_input}. Return ONLY the prompt."
+            prompt_refinement = f"Convert into a detailed English visual image prompt: {input_text}. Return ONLY prompt text."
             refined_prompt = model.generate_content(prompt_refinement).text.strip()
             img_out = generate_image_internal(refined_prompt)
             if img_out:
-                history.append((user_input, (img_out,)))
+                # Gradio Messages फ़ॉर्मेट में इमेज पास करना
+                history.append({"role": "assistant", "content": gr.FileData(value=img_out)})
                 return "", history
         except Exception:
             pass
 
-    # टेक्स्ट, कोडिंग और लीगल एनालिसिस के लिए मल्टी-टर्न चैट विथ सिस्टम प्रॉम्ट
+    # 3. Gemini API के लिए हिस्ट्री तैयार करना
     try:
-        chat_history = []
-        # सिस्टम पर्सनालिटी जोड़ना
-        chat_history.append({'role': 'user', 'parts': [SYSTEM_PERSONA]})
-        chat_history.append({'role': 'model', 'parts': ["Understood. I am operational as the HyreEdge Dual-Expert Tech & Legal Intelligence Engine. How may I assist you today?"]})
-        
-        for u_msg, a_msg in history:
-            if u_msg:
-                chat_history.append({'role': 'user', 'parts': [u_msg]})
-            if a_msg and isinstance(a_msg, str):
-                chat_history.append({'role': 'model', 'parts': [a_msg]})
-                
-        # यदि फाइल (PDF/Text/Image) अपलोड की गई है
-        current_content = [user_input]
+        gemini_messages = [
+            {'role': 'user', 'parts': [SYSTEM_PERSONA]},
+            {'role': 'model', 'parts': ["Understood. HyreEdge Enterprise Tech & Legal AI Engine is online."]}
+        ]
+
+        # पिछली बात-चीत (History) को एआई के लिए फ़ॉर्मेट करना
+        for msg in history[:-1]:
+            role = 'user' if msg['role'] == 'user' else 'model'
+            content = msg['content']
+            if isinstance(content, str):
+                gemini_messages.append({'role': role, 'parts': [content]})
+
+        # करंट इनपुट + फाइल हैंडलिंग
+        current_parts = []
+        if input_text:
+            current_parts.append(input_text)
+
         if uploaded_file is not None:
             try:
-                # अगर फाइल इमेज है या डॉक्यूमेंट
-                if uploaded_file.name.endswith(('png', 'jpg', 'jpeg', 'webp')):
+                if uploaded_file.name.lower().endswith(('png', 'jpg', 'jpeg', 'webp')):
                     pil_img = PIL.Image.open(uploaded_file.name)
-                    current_content.append(pil_img)
+                    current_parts.append(pil_img)
                 else:
                     with open(uploaded_file.name, 'r', encoding='utf-8', errors='ignore') as f:
                         file_text = f.read()
-                    current_content.append(f"\n[Attached Document Content]:\n{file_text}")
+                    current_parts.append(f"\n[Uploaded File Content]:\n{file_text}")
             except Exception as fe:
-                current_content.append(f"\n[Note: File read error: {str(fe)}]️")
+                current_parts.append(f"\n[File Reading Note: {str(fe)}]")
 
-        chat_history.append({'role': 'user', 'parts': current_content})
-        
-        response = model.generate_content(chat_history)
-        ai_response = response.text
-        
-        history.append((user_input, ai_response))
+        gemini_messages.append({'role': 'user', 'parts': current_parts})
+
+        # Gemini से जवाब जनरेट करना
+        response = model.generate_content(gemini_messages)
+        ai_reply = response.text if response and response.text else "Unable to generate a response at the moment."
+
+        # सहायक (Assistant) का जवाब हिस्ट्री में जोड़ें
+        history.append({"role": "assistant", "content": ai_reply})
         return "", history
-        
+
     except Exception as e:
-        err_msg = f"System Error encountered: {str(e)}"
-        history.append((user_input, err_msg))
+        error_msg = f"System Processing Error: {str(e)}"
+        history.append({"role": "assistant", "content": error_msg})
         return "", history
 
 # ==========================================
-# 3. ADVANCED PREMIUM UI (DARK GLASS THEME)
+# 3. ADVANCED MODERN UI (DARK GLASS THEME)
 # ==========================================
 custom_css = """
 body {
@@ -118,28 +122,21 @@ body {
     color: #f8fafc !important;
 }
 #main-container {
-    max-width: 1000px;
+    max-width: 950px;
     margin: 0 auto;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 .header-panel {
     text-align: center;
     padding: 20px 0 10px 0;
-    border-bottom: 1px solid #1e293b;
-    margin-bottom: 15px;
+    margin-bottom: 10px;
 }
 .header-panel h1 {
-    font-size: 2.4rem;
+    font-size: 2.2rem;
     font-weight: 800;
     background: linear-gradient(135deg, #60a5fa, #c084fc, #f472b6);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    letter-spacing: -0.5px;
-}
-.header-panel p {
-    color: #94a3b8;
-    font-size: 1rem;
-    margin-top: 5px;
 }
 #chatbot-box {
     background-color: #1e293b !important;
@@ -149,30 +146,30 @@ body {
 }
 """
 
-with gr.Blocks(theme=gr.themes.Default(primary_hue="blue", neutral_hue="slate"), css=custom_css) as demo:
+with gr.Blocks(theme=gr.themes.Default(primary_hue="indigo", neutral_hue="slate"), css=custom_css) as demo:
     with gr.Column(elem_id="main-container"):
         with gr.Column(elem_classes="header-panel"):
             gr.Markdown("# ✦ HyreEdge Enterprise AI")
             gr.Markdown("Dual-Core Intelligence • **Senior Tech Architect** & **Legal Compliance Expert**")
-        
+
+        chatbot = gr.Chatbot(
+            elem_id="chatbot-box",
+            height=580,
+            type="messages",  # Gradio के नए और सही मैसेज फॉर्मेट के लिए अनिवार्य
+            show_label=False,
+            avatar_images=(None, "https://api.dicebear.com/7.x/bottts/svg?seed=HyreEdgeSecure")
+        )
+
         with gr.Row():
-            chatbot = gr.Chatbot(
-                elem_id="chatbot-box",
-                height=600,
-                show_label=False,
-                avatar_images=(None, "https://api.dicebear.com/7.x/bottts/svg?seed=HyreEdgeSecure")
-            )
-            
-        with gr.Row():
-            with gr.Column(scale=8):
+            with gr.Column(scale=7):
                 msg = gr.Textbox(
-                    placeholder="Ask complex system architecture, write code, or analyze legal drafts...",
+                    placeholder="Ask complex tech questions, write code, or request legal analysis...",
                     show_label=False,
                     container=False
                 )
-            with gr.Column(scale=1, min_width=80):
-                file_upload = gr.File(label="Upload File", file_count="single", scale=1)
-                
+            with gr.Column(scale=2):
+                file_upload = gr.File(label="Upload File", file_count="single", container=False)
+
         with gr.Row():
             submit_btn = gr.Button("Execute Query ➔", variant="primary", scale=4)
             clear = gr.ClearButton([msg, chatbot, file_upload], value="Clear Workspace", scale=1)
@@ -184,4 +181,3 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="blue", neutral_hue="slate"),
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 7860))
     demo.launch(server_name="0.0.0.0", server_port=port)
-

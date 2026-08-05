@@ -15,7 +15,7 @@ if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
     model = genai.GenerativeModel('gemini-1.5-flash')
 else:
-    print("CRITICAL WARNING: GEMINI_API_KEY is missing from environment variables!")
+    print("CRITICAL WARNING: GEMINI_API_KEY is missing!")
 
 SYSTEM_PERSONA = (
     "You are 'HyreEdge Enterprise AI', an elite Senior Technology Architect and Senior Legal Consultant/Advocate.\n"
@@ -40,55 +40,64 @@ def generate_image_internal(prompt):
         pass
     return None
 
-def process_ai_request(user_input, history, uploaded_file):
-    if history is None:
-        history = []
-        
-    input_text = user_input.strip() if user_input else ""
-    input_lower = input_text.lower()
+def bot_response(message, history):
+    text_content = ""
+    file_obj = None
 
-    if not input_text and not uploaded_file:
-        return "", history
+    # Gradio ChatInterface से इनपुट हैंडलिंग
+    if isinstance(message, dict):
+        text_content = message.get("text", "").strip()
+        files = message.get("files", [])
+        if files:
+            file_obj = files[0]
+    else:
+        text_content = str(message).strip()
+
+    if not text_content and not file_obj:
+        return "Please provide text or attach a document."
+
+    input_lower = text_content.lower()
 
     # 1. इमेज जनरेशन चेक
     image_triggers = ["generate image", "create image", "draw", "तस्वीर बनाओ", "फोटो बनाओ", "चित्र बनाओ", "image of", "photo of", "flux"]
-    is_image_request = any(trigger in input_lower for trigger in image_triggers)
+    is_image = any(trigger in input_lower for trigger in image_triggers)
 
-    if is_image_request and not uploaded_file:
+    if is_image and not file_obj:
         try:
-            prompt_refinement = f"Convert into a detailed English visual image prompt: {input_text}. Return ONLY prompt text."
+            prompt_refinement = f"Convert into a detailed English visual image prompt: {text_content}. Return ONLY prompt text."
             refined_prompt = model.generate_content(prompt_refinement).text.strip()
             img_out = generate_image_internal(refined_prompt)
             if img_out:
-                history.append((input_text, (img_out,)))
-                return "", history
+                return gr.FileData(value=img_out)
         except Exception:
             pass
 
-    # 2. Gemini API प्रोसेसिंग
+    # 2. Gemini API प्रोसेसिंग (System Persona के साथ)
     try:
         gemini_messages = [
             {'role': 'user', 'parts': [SYSTEM_PERSONA]},
             {'role': 'model', 'parts': ["Understood. HyreEdge Enterprise Tech & Legal AI Engine is online."]}
         ]
 
-        for user_msg, ai_msg in history:
-            if user_msg:
-                gemini_messages.append({'role': 'user', 'parts': [str(user_msg)]})
-            if ai_msg and isinstance(ai_msg, str):
-                gemini_messages.append({'role': 'model', 'parts': [ai_msg]})
+        # पुरानी चैट हिस्ट्री जोड़ना
+        for h in history:
+            role = 'user' if h['role'] == 'user' else 'model'
+            content = h['content']
+            if isinstance(content, str):
+                gemini_messages.append({'role': role, 'parts': [content]})
 
         current_parts = []
-        if input_text:
-            current_parts.append(input_text)
+        if text_content:
+            current_parts.append(text_content)
 
-        if uploaded_file is not None:
+        if file_obj:
             try:
-                if uploaded_file.name.lower().endswith(('png', 'jpg', 'jpeg', 'webp')):
-                    pil_img = PIL.Image.open(uploaded_file.name)
+                file_path = file_obj.get("path") if isinstance(file_obj, dict) else str(file_obj)
+                if file_path.lower().endswith(('png', 'jpg', 'jpeg', 'webp')):
+                    pil_img = PIL.Image.open(file_path)
                     current_parts.append(pil_img)
                 else:
-                    with open(uploaded_file.name, 'r', encoding='utf-8', errors='ignore') as f:
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
                         file_text = f.read()
                     current_parts.append(f"\n[Uploaded File Content]:\n{file_text}")
             except Exception as fe:
@@ -97,46 +106,22 @@ def process_ai_request(user_input, history, uploaded_file):
         gemini_messages.append({'role': 'user', 'parts': current_parts})
 
         response = model.generate_content(gemini_messages)
-        ai_reply = response.text if response and response.text else "Response generated successfully."
-
-        history.append((input_text if input_text else "[File Uploaded]", ai_reply))
-        return "", history
+        return response.text if response and response.text else "Unable to generate response."
 
     except Exception as e:
-        error_msg = f"System Processing Error: {str(e)}"
-        history.append((input_text, error_msg))
-        return "", history
+        return f"System Processing Error: {str(e)}"
 
 # ==========================================
-# 3. UI SETUP
+# 3. STABLE GRADIO CHATINTERFACE UI
 # ==========================================
 custom_css = """
-body {
-    background-color: #0f172a !important;
-    color: #f8fafc !important;
-}
-#main-container {
-    max-width: 950px;
-    margin: 0 auto;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
-}
-.header-panel {
-    text-align: center;
-    padding: 20px 0 10px 0;
-    margin-bottom: 10px;
-}
+body { background-color: #0f172a !important; color: #f8fafc !important; }
+#main-container { max-width: 950px; margin: 0 auto; font-family: 'Inter', system-ui, sans-serif; }
+.header-panel { text-align: center; padding: 15px 0; margin-bottom: 5px; }
 .header-panel h1 {
-    font-size: 2.2rem;
-    font-weight: 800;
+    font-size: 2.2rem; font-weight: 800;
     background: linear-gradient(135deg, #60a5fa, #c084fc, #f472b6);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-}
-#chatbot-box {
-    background-color: #1e293b !important;
-    border: 1px solid #334155 !important;
-    border-radius: 16px !important;
-    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
 }
 """
 
@@ -146,29 +131,16 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="indigo", neutral_hue="slate"
             gr.Markdown("# ✦ HyreEdge Enterprise AI")
             gr.Markdown("Dual-Core Intelligence • **Senior Tech Architect** & **Legal Compliance Expert**")
 
-        chatbot = gr.Chatbot(
-            elem_id="chatbot-box",
-            height=580,
-            show_label=False,
-            avatar_images=(None, "https://api.dicebear.com/7.x/bottts/svg?seed=HyreEdgeSecure")
+        gr.ChatInterface(
+            fn=bot_response,
+            type="messages",
+            multimodal=True,
+            textbox=gr.MultimodalTextbox(
+                placeholder="Ask complex tech questions, write code, or request legal analysis...",
+                container=False,
+                scale=7
+            )
         )
-
-        with gr.Row():
-            with gr.Column(scale=7):
-                msg = gr.Textbox(
-                    placeholder="Ask complex tech questions, write code, or request legal analysis...",
-                    show_label=False,
-                    container=False
-                )
-            with gr.Column(scale=2):
-                file_upload = gr.File(label="Upload File", file_count="single", container=False)
-
-        with gr.Row():
-            submit_btn = gr.Button("Execute Query ➔", variant="primary", scale=4)
-            clear = gr.ClearButton([msg, chatbot, file_upload], value="Clear Workspace", scale=1)
-
-        msg.submit(process_ai_request, [msg, chatbot, file_upload], [msg, chatbot])
-        submit_btn.click(process_ai_request, [msg, chatbot, file_upload], [msg, chatbot])
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 7860))

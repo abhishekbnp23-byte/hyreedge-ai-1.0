@@ -20,3 +20,15 @@ Build a world-class AI Workspace that helps users with:
 ### Long Term Vision
 
 Become a professional AI platform for Developers, Businesses, Students and Legal Professionals.
+## Core Features (Version 1)
+
+- AI Chat
+- Tech Expert
+- Legal Expert
+- File Upload
+- PDF Analysis
+- Image Analysis
+- AI Image Generation
+- Chat History
+- Dark Mode
+- Hindi + English Support

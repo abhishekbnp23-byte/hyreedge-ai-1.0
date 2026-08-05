@@ -32,3 +32,29 @@ Become a professional AI platform for Developers, Businesses, Students and Legal
 - Chat History
 - Dark Mode
 - Hindi + English Support
+🤖 AI
+Tech Expert
+Legal Expert
+📄 Documents
+PDF
+DOCX
+TXT
+🖼 Images
+Image Analysis
+Image Generation
+💻 Coding
+Code Generation
+Code Debugging
+Code Explanation
+🌐 Languages
+Hindi
+English
+🎨 UI
+Premium Modern UI
+Dark / Light Mode
+Mobile Friendly
+Desktop Friendly
+Planned
+🟡 In Progress
+🔵 Testing
+✅ Completed

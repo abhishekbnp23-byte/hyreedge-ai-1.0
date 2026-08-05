@@ -1,3 +1,4 @@
+
 import google.generativeai as genai
 import gradio as gr
 import PIL.Image
@@ -7,16 +8,16 @@ import urllib.parse
 import os
 
 # ==========================================
-# 1. API KEY CONFIGURATION
+# 1. API KEY CONFIGURATION (SAFE & SECURE)
 # ==========================================
-# अपनी असली Google AI Studio API Key को नीचे उद्धरण चिन्हों ("") के बीच लिखें
-GOOGLE_API_KEY = os.environ.get("GEMINI_API_KEY") or "YOUR_GEMINI_API_KEY_HERE"
+# API Key को Render के Environment Variables से लिया जाएगा
+GOOGLE_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-if GOOGLE_API_KEY and GOOGLE_API_KEY != "YOUR_GEMINI_API_KEY_HERE":
+if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
     model = genai.GenerativeModel('gemini-1.5-flash')
 else:
-    print("WARNING: GEMINI_API_KEY is missing or invalid!")
+    print("WARNING: GEMINI_API_KEY environment variable is missing!")
 
 # ==========================================
 # 2. CORE LOGIC FUNCTIONS

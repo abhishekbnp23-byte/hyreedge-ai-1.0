@@ -7,7 +7,7 @@ import urllib.parse
 import os
 
 # ==========================================
-# 1. API CONFIGURATION & SAFETY
+# 1. API CONFIGURATION
 # ==========================================
 GOOGLE_API_KEY = os.environ.get("GEMINI_API_KEY")
 
@@ -17,7 +17,6 @@ if GOOGLE_API_KEY:
 else:
     print("CRITICAL WARNING: GEMINI_API_KEY is missing from environment variables!")
 
-# स्पेशलाइज्ड डुअल-सिस्टम पर्सनालिटी (Tech + Legal Expert)
 SYSTEM_PERSONA = (
     "You are 'HyreEdge Enterprise AI', an elite Senior Technology Architect and Senior Legal Consultant/Advocate.\n"
     "Provide authoritative, accurate, structured, and deeply analytical responses.\n\n"
@@ -27,7 +26,7 @@ SYSTEM_PERSONA = (
 )
 
 # ==========================================
-# 2. CORE ENGINES (IMAGE & CHAT)
+# 2. CORE ENGINES
 # ==========================================
 def generate_image_internal(prompt):
     encoded_prompt = urllib.parse.quote(prompt)
@@ -42,16 +41,16 @@ def generate_image_internal(prompt):
     return None
 
 def process_ai_request(user_input, history, uploaded_file):
-    if not user_input and not uploaded_file:
-        return "", history
-
+    if history is None:
+        history = []
+        
     input_text = user_input.strip() if user_input else ""
     input_lower = input_text.lower()
 
-    # 1. यूजर मैसेज को हिस्ट्री में डिक्शनरी फॉर्मेट में जोड़ें
-    history.append({"role": "user", "content": input_text if input_text else "[File Uploaded]"})
+    if not input_text and not uploaded_file:
+        return "", history
 
-    # 2. इमेज जनरेशन चेक
+    # 1. इमेज जनरेशन चेक
     image_triggers = ["generate image", "create image", "draw", "तस्वीर बनाओ", "फोटो बनाओ", "चित्र बनाओ", "image of", "photo of", "flux"]
     is_image_request = any(trigger in input_lower for trigger in image_triggers)
 
@@ -61,27 +60,24 @@ def process_ai_request(user_input, history, uploaded_file):
             refined_prompt = model.generate_content(prompt_refinement).text.strip()
             img_out = generate_image_internal(refined_prompt)
             if img_out:
-                # Gradio Messages फ़ॉर्मेट में इमेज पास करना
-                history.append({"role": "assistant", "content": gr.FileData(value=img_out)})
+                history.append((input_text, (img_out,)))
                 return "", history
         except Exception:
             pass
 
-    # 3. Gemini API के लिए हिस्ट्री तैयार करना
+    # 2. Gemini API प्रोसेसिंग
     try:
         gemini_messages = [
             {'role': 'user', 'parts': [SYSTEM_PERSONA]},
             {'role': 'model', 'parts': ["Understood. HyreEdge Enterprise Tech & Legal AI Engine is online."]}
         ]
 
-        # पिछली बात-चीत (History) को एआई के लिए फ़ॉर्मेट करना
-        for msg in history[:-1]:
-            role = 'user' if msg['role'] == 'user' else 'model'
-            content = msg['content']
-            if isinstance(content, str):
-                gemini_messages.append({'role': role, 'parts': [content]})
+        for user_msg, ai_msg in history:
+            if user_msg:
+                gemini_messages.append({'role': 'user', 'parts': [str(user_msg)]})
+            if ai_msg and isinstance(ai_msg, str):
+                gemini_messages.append({'role': 'model', 'parts': [ai_msg]})
 
-        # करंट इनपुट + फाइल हैंडलिंग
         current_parts = []
         if input_text:
             current_parts.append(input_text)
@@ -100,21 +96,19 @@ def process_ai_request(user_input, history, uploaded_file):
 
         gemini_messages.append({'role': 'user', 'parts': current_parts})
 
-        # Gemini से जवाब जनरेट करना
         response = model.generate_content(gemini_messages)
-        ai_reply = response.text if response and response.text else "Unable to generate a response at the moment."
+        ai_reply = response.text if response and response.text else "Response generated successfully."
 
-        # सहायक (Assistant) का जवाब हिस्ट्री में जोड़ें
-        history.append({"role": "assistant", "content": ai_reply})
+        history.append((input_text if input_text else "[File Uploaded]", ai_reply))
         return "", history
 
     except Exception as e:
         error_msg = f"System Processing Error: {str(e)}"
-        history.append({"role": "assistant", "content": error_msg})
+        history.append((input_text, error_msg))
         return "", history
 
 # ==========================================
-# 3. ADVANCED MODERN UI (DARK GLASS THEME)
+# 3. UI SETUP
 # ==========================================
 custom_css = """
 body {
@@ -155,7 +149,6 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="indigo", neutral_hue="slate"
         chatbot = gr.Chatbot(
             elem_id="chatbot-box",
             height=580,
-            type="messages",  # Gradio के नए और सही मैसेज फॉर्मेट के लिए अनिवार्य
             show_label=False,
             avatar_images=(None, "https://api.dicebear.com/7.x/bottts/svg?seed=HyreEdgeSecure")
         )
@@ -174,7 +167,6 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="indigo", neutral_hue="slate"
             submit_btn = gr.Button("Execute Query ➔", variant="primary", scale=4)
             clear = gr.ClearButton([msg, chatbot, file_upload], value="Clear Workspace", scale=1)
 
-        # इवेंट बाइंडिंग
         msg.submit(process_ai_request, [msg, chatbot, file_upload], [msg, chatbot])
         submit_btn.click(process_ai_request, [msg, chatbot, file_upload], [msg, chatbot])
 
